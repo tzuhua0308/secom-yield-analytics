@@ -1,46 +1,94 @@
-# SECOM Reliability Analysis Toolkit
+# SECOM Yield Analytics — End-to-End Portfolio
 
-> **Semiconductor package reliability analysis on UCI SECOM (1,567 wafer lots × 590 sensors).**
-> Weibull distribution fitting, process capability (Cpk) analysis, and a full FMEA + 8D report
-> demonstrating the standard reliability engineering workflow used in fab and OSAT operations.
-
-## TL;DR
-
-This project takes the UCI SECOM dataset (Pass/Fail labels + 590 anonymized sensor readings)
-and applies **four layers of reliability analysis** in the same sequence a package reliability
-engineer would use in real fab operations:
-
-```
-Dashboard   →   Weibull       →   Cpk             →   FMEA + 8D
-(WHERE)         (HOW failing)     (WHAT drivers)      (WHY & FIX)
-```
-
-Sister project of an existing SECOM Dashboard (Streamlit + PostgreSQL) that first surfaced
-a **2008-07 yield excursion (yield dropped 93.4% → 85.96%)**. This toolkit provides the
-statistical evidence and structured RCA for that finding.
+> A **4-layer semiconductor yield analysis framework** built on UCI SECOM
+> (1,567 wafer lots × 590 sensors, 2008-07 ~ 2008-10).
+> This repo is the **landing page** — it hosts the reliability layer (this repo)
+> and links to the dashboard and prediction layers (sister repos).
 
 ---
 
-## Key Results
+## The 4-Layer Framework
 
-### 1. Weibull Analysis — Failure Mechanism
+A single yield incident (**2008-07 excursion: yield dropped 93.4% → 85.96%**) analyzed
+through four progressively deeper lenses, in the order a real fab reliability engineer
+would use them:
 
 ```
-β (shape)  =  2.702   → Wear-out failure mode (aging / fatigue driven)
-η (scale)  = 5175.8 hr → Characteristic life (63.2% failure point)
-B10 life   = 2250.2 hr → 10% failure time (warranty threshold)
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│  Layer 1         │───▶│  Layer 2         │───▶│  Layer 3         │───▶│  Layer 4         │
+│  DASHBOARD       │    │  WEIBULL         │    │  Cpk             │    │  FMEA + 8D       │
+│                  │    │                  │    │                  │    │                  │
+│  WHERE is the    │    │  HOW does it     │    │  WHAT is         │    │  WHY & how to    │
+│  problem?        │    │  fail?           │    │  driving it?     │    │  FIX?            │
+└──────────────────┘    └──────────────────┘    └──────────────────┘    └──────────────────┘
+        │                        │                        │                        │
+        ▼                        ▼                        ▼                        ▼
+  Monthly yield          β = 2.70                 5 critical sensors      RPN-prioritized
+  trend chart            Wear-out failure         Cpk 0.18 ~ 0.61         corrective actions
+  surfaces 2008-07       (not random)             ALL Not Capable         + 5-Why + Fishbone
+  excursion
+```
+
+Each layer stands alone — but the **compound narrative** (statistical evidence chains
+across four independent analyses converging on the same root cause) is what shows
+end-to-end engineering thinking.
+
+---
+
+## Layer-by-Layer
+
+### Layer 1 · Dashboard — Yield Trend & Sensor Health
+
+**Repo**: [semicon-yield-dashboard](https://github.com/tzuhua0308/semicon-yield-dashboard)
+
+PostgreSQL 16 + Streamlit + Plotly. 3-tab dashboard on 92 万 sensor readings:
+monthly yield trend, sensor health (NULL analysis), lot-level drill-down.
+
+**Key finding**: 2008-07 yield dropped to **85.96%** (baseline 93.4%) — the anchor
+event this whole portfolio investigates.
+
+**Tech**: PostgreSQL, psycopg2, pandas ETL, Streamlit, Plotly, Tableau Public
+
+---
+
+### Layer 2 · Prediction — Imbalanced Classification
+
+**Repo**: [semicon-yield-prediction](https://github.com/tzuhua0308/semicon-yield-prediction)
+
+XGBoost baseline → improved classifier on 93.4% imbalanced data.
+Demonstrates the "majority class trap" (baseline F1 = 0.00) and the tuning path
+to a working model (**5-fold OOF F1 = 0.26**).
+
+**Techniques**: VarianceThreshold, Mutual Information Top-50 selection,
+scale_pos_weight, OOF threshold tuning (0.5 → 0.12)
+
+**Tech**: XGBoost, scikit-learn, cross-validation
+
+---
+
+### Layer 3 · Reliability — Weibull + Cpk (this repo)
+
+Full reliability engineering treatment of the 2008-07 failures.
+
+#### Weibull Distribution Fitting
+
+```
+β (shape)  =  2.702   → Wear-out failure mode (not random)
+η (scale)  = 5175.8 hr → Characteristic life
+B10 life   = 2250.2 hr → 10% failure time
 MTTF       = 4602.8 hr → Mean time to failure
 ```
 
 ![Weibull Analysis](outputs/weibull_analysis.png)
 
-**Interpretation**: β > 1 with a well-linearized probability plot → failures are **not random**,
-they accumulate over time. This mathematically supports the yield excursion pattern observed
-in the sister Dashboard project.
+The Weibull probability plot (right panel) shows failures fall on a straight line
+— supporting the Weibull assumption. β = 2.70 mathematically confirms the failures
+are **accumulating over time**, not random events.
 
-### 2. Cpk Process Capability — Critical Sensor Diagnosis
+#### Cpk Process Capability
 
-Top-5 most discriminating sensors (selected by Cohen's d between Pass and Fail groups):
+Top-5 discriminating sensors selected via **Cohen's d** between Pass and Fail groups,
+then evaluated against implicit spec limits (Pass samples' P1/P99):
 
 | Sensor | Cpk  | Judgment       |
 |--------|------|----------------|
@@ -52,43 +100,47 @@ Top-5 most discriminating sensors (selected by Cohen's d between Pass and Fail g
 
 ![Cpk Analysis](outputs/cpk_analysis.png)
 
-**Interpretation**: All 5 critical sensors fall below the industry threshold of Cpk ≥ 1.33.
-This quantifies **which specific process parameters** are driving the yield loss.
+**Interpretation**: All 5 critical sensors fall below the industry threshold of
+Cpk ≥ 1.33 — quantifying **which process parameters** need improvement.
 
-### 3. FMEA + 8D Report — Structured RCA
+---
 
-Full report: [`docs/FMEA_and_8D_Report.md`](docs/FMEA_and_8D_Report.md)
+### Layer 4 · FMEA + 8D — Structured RCA
 
-Includes:
-- **FMEA worksheet** scored per AIAG 4th Ed. (Severity × Occurrence × Detection = RPN)
+Full report: **[`docs/FMEA_and_8D_Report.md`](docs/FMEA_and_8D_Report.md)**
+
+- **FMEA worksheet** scored per AIAG 4th Ed. (S × O × D = RPN)
 - **8D Report** (D1 Team → D8 Recognition)
-- **5-Why analysis** and **Fishbone (Ishikawa) diagram**
-- Corrective actions with owner / deadline / success metric
-- Verification plan (Cpk targets, Weibull β convergence)
+- **5-Why analysis** on the highest-RPN failure mode
+- **Fishbone (Ishikawa) diagram** in ASCII
+- **Corrective actions** with owner / deadline / success metric
+- **Verification plan** (Cpk targets, Weibull β convergence, monthly yield ≥ 93.4%)
 
 ---
 
 ## Project Structure
 
 ```
-reliability/
-├── weibull_analysis.py         # Module 1 — Weibull fit + probability plot
-├── cpk_analysis.py             # Module 2 — Cpk on Top-5 discriminating sensors
+secom-yield-analytics/  (this repo — reliability code + landing page)
+├── README.md                    ← you are here
+├── weibull_analysis.py          ← Layer 3a
+├── cpk_analysis.py              ← Layer 3b
 ├── docs/
-│   └── FMEA_and_8D_Report.md   # Module 3 — Structured RCA document
-├── outputs/
-│   ├── weibull_analysis.png
-│   └── cpk_analysis.png
-└── README.md
+│   └── FMEA_and_8D_Report.md    ← Layer 4
+└── outputs/
+    ├── weibull_analysis.png
+    └── cpk_analysis.png
+
+Sister repos:
+├── semicon-yield-dashboard      ← Layer 1
+└── semicon-yield-prediction     ← Layer 2
 ```
 
 ---
 
-## How to Run
+## How to Run (Reliability Layer)
 
-Requires the SECOM dataset from the sister Dashboard project
-(`../dashboard/data/uci-secom.csv`) and the same virtual environment
-(Python 3.13, scipy, pandas, matplotlib).
+Requires the SECOM dataset from the sister Dashboard project (`../dashboard/data/uci-secom.csv`).
 
 ```bash
 # Activate shared venv
@@ -101,52 +153,48 @@ python weibull_analysis.py
 python cpk_analysis.py
 ```
 
-Both scripts print numeric results to stdout and save PNG figures to `outputs/`.
-
 ---
 
-## Design Decisions
-
-Non-trivial choices worth explaining in an interview:
+## Design Decisions Worth Explaining
 
 | Decision | Rationale |
 |----------|-----------|
-| **Fit Weibull with `floc=0`** | Standard reliability engineering practice (2-parameter Weibull); the 3-parameter version with free location often overfits on small failure samples. |
-| **Time-to-failure = hours since first observation** | SECOM is a discrete-time production log, not a life test. Framing failures as a renewal process is the standard bridge to Weibull. |
-| **Median rank via Bernard's approximation `(i - 0.3) / (n + 0.4)`** | Industry-standard for small sample plotting; less biased than `i / (n+1)` for n < 50. |
-| **Cohen's d for sensor selection** | Effect-size ranking is more robust than raw t-statistic when sample sizes are imbalanced (1,463 Pass vs 104 Fail). |
-| **Spec limits = Pass samples' P1 / P99** | SECOM has no engineered spec limits. Using the empirical Pass distribution as implicit tolerance is a defensible proxy that lets Cpk be computed at all. |
-| **AIAG 4th Ed. scoring for FMEA** | Widely used in automotive and semiconductor supply chains; more portable than fab-specific rubrics. |
+| **2-parameter Weibull (`floc=0`)** | Industry standard; 3-parameter version overfits on small failure samples (n=104). |
+| **Time-to-failure = hours since first observation** | SECOM is a discrete-time production log, not a life test. This framing bridges to standard Weibull renewal analysis. |
+| **Median rank via Bernard's approximation `(i - 0.3) / (n + 0.4)`** | Standard for small-sample plotting; less biased than `i / (n+1)` for n < 50. |
+| **Cohen's d for sensor selection** | Effect-size ranking is robust to the 14:1 class imbalance in SECOM. |
+| **Implicit spec = Pass samples' P1 / P99** | SECOM has no engineered spec limits. Using the empirical Pass distribution as tolerance is a defensible proxy. |
+| **AIAG 4th Ed. FMEA scoring** | Widely used in automotive + semiconductor supply chains; more portable than fab-specific rubrics. |
 
 ---
 
 ## Limitations & Honesty
 
-- **Sensor meanings are anonymized** in the UCI SECOM dataset. The FMEA document uses
-  sensor IDs as proxies for physical process parameters, with **hypothesized failure
-  mechanisms** clearly labeled as assumptions rather than diagnosed root causes.
-- **Small failure sample** (n = 104) limits the precision of Weibull parameters;
-  90% confidence intervals on β would span roughly ±0.4 for this sample size.
-- **Not a substitute for real fab telemetry**. This is a portfolio demonstration of
-  the analytical framework, not a production-ready incident report.
+- **Sensor meanings are anonymized** in UCI SECOM. The FMEA document uses sensor IDs
+  as proxies for physical process parameters, with **hypothesized failure mechanisms
+  clearly labeled as assumptions** rather than diagnosed root causes.
+- **Small failure sample** (n = 104) — 90% CI on Weibull β would span roughly ±0.4.
+- This is a **portfolio demonstration of the analytical framework**, not a
+  production incident report.
 
 ---
 
-## Skills Demonstrated
+## Skills Demonstrated (Portfolio-Wide)
 
-**Statistical Methods**: Weibull distribution fitting, Process Capability (Cp / Cpk),
-Cohen's d effect size, Median Rank / Bernard's approximation, Empirical CDF, Probability plots
+**Data Engineering**: PostgreSQL 16 (long-format schema, views, indexes), pandas ETL, SQL
 
-**Reliability Engineering Frameworks**: FMEA (AIAG 4th Ed.), 8D Report, 5-Why,
-Fishbone / Ishikawa, RPN prioritization, DMAIC, SPC (Statistical Process Control)
+**Machine Learning**: XGBoost, imbalanced classification, cross-validation, threshold tuning, feature selection (VarianceThreshold, Mutual Information)
 
-**Industry Standards Referenced**: AIAG SPC, AIAG FMEA 4th Ed., JEDEC JESD22 (reliability testing)
+**Statistics & Reliability**: Weibull distribution fitting, Cp/Cpk process capability, Cohen's d effect size, Median Rank plotting, probability plots
 
-**Python Stack**: `pandas`, `numpy`, `scipy.stats.weibull_min`, `matplotlib`
+**Reliability Engineering Frameworks**: FMEA (AIAG 4th Ed.), 8D Report, 5-Why, Fishbone/Ishikawa, RPN, DMAIC, SPC
+
+**Visualization**: Streamlit + Plotly interactive dashboards, matplotlib static plots, Tableau Public
+
+**Industry Standards Referenced**: AIAG SPC, AIAG FMEA 4th Ed., JEDEC JESD22
 
 ---
 
 ## Related Projects
 
-- **[SECOM Dashboard](https://github.com/tzuhua0308/)** — PostgreSQL + Streamlit yield dashboard (upstream project that surfaced the 2008-07 excursion)
-- **[semicon-defect-cnn](https://github.com/tzuhua0308/semicon-defect-cnn)** — PyTorch CNN for WM-811K wafer map defect classification (CV / DL sister project)
+- **[semicon-defect-cnn](https://github.com/tzuhua0308/semicon-defect-cnn)** — PyTorch CNN for WM-811K wafer map defect classification. Computer vision sister track (image data / deep learning), complementary to this tabular / statistics-heavy SECOM portfolio.
